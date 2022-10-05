@@ -14,10 +14,16 @@
 #include <random>
 
 #define WALK_MESH_NAME "WalkMesh"
+
 #define ZOMBIE_MESH_NAME "Zombie"
+#define ZOMBIE_COUNT 10
+#define ZOMBIE_THRESHOLD 5.0f
+
 #define PLAYER_MESH_NAME "Player"
 #define PLAYER_RADIUS 9.5f
+
 #define MATH_PI 3.14159265f
+
 
 #define DEBUG
 
@@ -27,6 +33,11 @@
 #else
 #define LOG(ARGS)
 #endif
+
+
+// Hardcoded, I'm sorry
+constexpr glm::vec3 goal = glm::vec3(112.05f, -28.9769f, -8.88378f);
+
 
 Mesh *player_mesh = nullptr;
 Mesh *zombie_mesh = nullptr;
@@ -116,6 +127,38 @@ PlayMode::PlayMode() : scene(*largecharge_scene) {
 		drawable.pipeline.start = player_mesh->start;
 		drawable.pipeline.count = player_mesh->count;
 	}
+
+	zombies.reserve(ZOMBIE_COUNT);
+	for (size_t i = 0; i < ZOMBIE_COUNT; i++) {
+		glm::vec3 pos = glm::vec3(
+			static_cast< float >(rand() % 200 - 100),
+			static_cast< float >(rand() % 200 - 100),
+			static_cast< float >(rand() % 200 - 100));
+		WalkPoint wp = walkmesh->nearest_walk_point(pos);
+		scene.transforms.emplace_back();
+
+
+		Zombie &zombie = zombies.emplace_back();
+		zombie.pos = walkmesh->to_world_point(wp);
+
+		zombie.transform = &scene.transforms.back();
+		zombie.transform->position = zombie.pos;
+		zombie.transform->position.z -= 2.5f;
+		zombie.transform->rotation =
+			glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), walkmesh->to_world_triangle_normal(wp));
+
+		scene.drawables.emplace_back(zombie.transform);
+		Scene::Drawable &drawable = scene.drawables.back();
+		drawable.pipeline = lit_color_texture_program_pipeline;
+
+		drawable.pipeline.vao = largecharge_meshes_for_lit_color_texture_program;
+		drawable.pipeline.type = zombie_mesh->type;
+		drawable.pipeline.start = zombie_mesh->start;
+		drawable.pipeline.count = zombie_mesh->count;
+
+		LOG("spawned zombie: " << i << " (" << zombie.transform->position.x << ", "
+			<< zombie.transform->position.y << ", " << zombie.transform->position.z << ")");
+	}
 }
 
 PlayMode::~PlayMode() {
@@ -178,7 +221,7 @@ void PlayMode::update(float elapsed) {
 		//combine inputs into a move:
 		constexpr float PlayerSpeed = 12.0f;
 		move = glm::vec2(0.0f);
-		if (up.pressed) move.y = 1.0f;
+		if (!won && up.pressed) move.y = 1.0f;
 
 		//make it so that moving diagonally doesn't go faster:
 		if (move != glm::vec2(0.0f)) move = glm::normalize(move) * PlayerSpeed * elapsed;
@@ -245,10 +288,40 @@ void PlayMode::update(float elapsed) {
 			player.transform->rotation = glm::normalize(adjust * player.transform->rotation);
 		}
 
-		{
+		{ //rotate the player model to make it look like its rolling
 			// This sort of looks right for rotation. The math makes no sense though...
 			glm::quat rot = glm::quat(glm::vec3(-2 * glm::length(move) / (PLAYER_RADIUS * MATH_PI), 0.0f, 0.0f));
 			player.model_transform->rotation = rot * player.model_transform->rotation;
+		}
+
+		glm::vec3 player_pos = walkmesh->to_world_point(player.at);
+		LOG("player pos: (" << player_pos.x << ", " << player_pos.y << ", " << player_pos.z << ")");
+
+		{ //check each zombie if it's inside player
+			for (auto iter = zombies.begin(); iter != zombies.end();) {
+				glm::vec3 pos = iter->pos;
+				float dist = glm::distance(pos, player_pos);
+				if (dist < ZOMBIE_THRESHOLD) {
+					//move to origin (hides inside the ground)
+					iter->transform->position.x = 0;
+					iter->transform->position.y = 0;
+					iter->transform->position.z = 0;
+
+					//remove from list
+					iter = zombies.erase(iter);
+
+					//increment zombies_eaten
+					zombies_eaten++;
+				} else {
+					iter++;
+				}
+			}
+		}
+
+		{ //check if goal was eached
+			if (glm::distance(goal, player_pos) < ZOMBIE_THRESHOLD) {
+				won = true;
+			}
 		}
 
 		/*
@@ -300,6 +373,13 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	*/
 
 	{ //use DrawLines to overlay some text:
+		std::string text = "Mouse motion looks; W moves forward; escape ungrabs mouse";
+		if (won) {
+			text = "Congratulations! Zombies eaten: " + std::to_string(zombies_eaten);
+		} else if (zombies_eaten > 0) {
+			text = "Zombies eaten: " + std::to_string(zombies_eaten);
+		}
+
 		glDisable(GL_DEPTH_TEST);
 		float aspect = float(drawable_size.x) / float(drawable_size.y);
 		DrawLines lines(glm::mat4(
@@ -310,12 +390,12 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		));
 
 		constexpr float H = 0.09f;
-		lines.draw_text("Mouse motion looks; WASD moves; escape ungrabs mouse",
+		lines.draw_text(text,
 			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
 		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion looks; WASD moves; escape ungrabs mouse",
+		lines.draw_text(text,
 			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + + 0.1f * H + ofs, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0xff, 0xff, 0xff, 0x00));

@@ -5,6 +5,7 @@
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <vector>
 #include <deque>
 
@@ -38,4 +39,12 @@ struct PlayMode : Mode {
 		//camera is at player's head and will be pitched by mouse up/down motion:
 		Scene::Camera *camera = nullptr;
 	} player;
+
+	struct Zombie {
+		glm::vec3 pos;
+		Scene::Transform *transform;
+	};
+	std::vector< Zombie > zombies;
+	unsigned int zombies_eaten = 0;
+	bool won = false;
 };
