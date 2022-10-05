@@ -25,7 +25,7 @@
 #define MATH_PI 3.14159265f
 
 
-#define DEBUG
+// #define DEBUG
 
 // Debug logging
 #ifdef DEBUG

@@ -2,7 +2,7 @@
 
 Author: Henry Du
 
-Design: (TODO: In two sentences or fewer, describe what is new and interesting about your game.)
+Design: In this game, you play as a very rotund character. Roll your way to the yellow point on the spherical map for victory, eating zombies scattered around the map as a bonus. A third person camera follows the player as they move.
 
 Screen Shot:
 
@@ -10,9 +10,13 @@ Screen Shot:
 
 How To Play:
 
-(TODO: describe the controls and (if needed) goals/strategy.)
+The player moves forward by rolling with the `w` key and can pivot freely using the mouse. Clicking captures the mouse and `esc` releases the mouse.
 
-Sources: (TODO: list a source URL for any assets you did not create yourself. Make sure you have a license for the asset.)
+Moving and pivoting the camera will also move the camera as appropriate. The player can eat zombies by rolling over them and win the game by rolling onto the yellow point on the map. The yellow point coincides with the peak of the tallest hill on the sphere.
+
+## Sources:
+
+All assets used are original. I'm a Blender noob; please forgive the ugly models.
 
 WalkMesh was partially designed using algorithms from the following two sources:
 - https://stackoverflow.com/questions/9605556/how-to-project-a-point-onto-a-plane-in-3d
