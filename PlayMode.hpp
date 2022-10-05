@@ -23,7 +23,7 @@ struct PlayMode : Mode {
 	struct Button {
 		uint8_t downs = 0;
 		uint8_t pressed = 0;
-	} left, right, down, up;
+	} up;
 
 	//local copy of the game scene (so code can change it during gameplay):
 	Scene scene;
@@ -33,6 +33,8 @@ struct PlayMode : Mode {
 		WalkPoint at;
 		//transform is at player's feet and will be yawed by mouse left/right motion:
 		Scene::Transform *transform = nullptr;
+		//another transform for the player's model w.r.t to the player transform
+		Scene::Transform *model_transform = nullptr;
 		//camera is at player's head and will be pitched by mouse up/down motion:
 		Scene::Camera *camera = nullptr;
 	} player;

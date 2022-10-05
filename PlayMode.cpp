@@ -13,23 +13,55 @@
 
 #include <random>
 
-GLuint phonebank_meshes_for_lit_color_texture_program = 0;
-Load< MeshBuffer > phonebank_meshes(LoadTagDefault, []() -> MeshBuffer const * {
-	MeshBuffer const *ret = new MeshBuffer(data_path("phone-bank.pnct"));
-	phonebank_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
+#define WALK_MESH_NAME "WalkMesh"
+#define ZOMBIE_MESH_NAME "Zombie"
+#define PLAYER_MESH_NAME "Player"
+#define PLAYER_RADIUS 9.5f
+#define MATH_PI 3.14159265f
+
+#define DEBUG
+
+// Debug logging
+#ifdef DEBUG
+#define LOG(ARGS) std::cout << ARGS << std::endl
+#else
+#define LOG(ARGS)
+#endif
+
+Mesh *player_mesh = nullptr;
+Mesh *zombie_mesh = nullptr;
+
+GLuint largecharge_meshes_for_lit_color_texture_program = 0;
+Load< MeshBuffer > largecharge_meshes(LoadTagDefault, []() -> MeshBuffer const * {
+	MeshBuffer const *ret = new MeshBuffer(data_path("large-and-in-charge.pnct"));
+	largecharge_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
 	return ret;
 });
 
-Load< Scene > phonebank_scene(LoadTagDefault, []() -> Scene const * {
-	return new Scene(data_path("phone-bank.scene"), [&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
-		Mesh const &mesh = phonebank_meshes->lookup(mesh_name);
+Load< Scene > largecharge_scene(LoadTagDefault, []() -> Scene const * {
+	return new Scene(data_path("large-and-in-charge.scene"),
+			[&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name) {
+		Mesh const &mesh = largecharge_meshes->lookup(mesh_name);
 
 		scene.drawables.emplace_back(transform);
 		Scene::Drawable &drawable = scene.drawables.back();
+		if (mesh_name == PLAYER_MESH_NAME) {
+			LOG("Loaded player at (" << transform->position.x << "," <<
+				transform->position.y << "," << transform->position.z << ")");
+			player_mesh = new Mesh(mesh);
+			return;
+		}
+
+		if (mesh_name == ZOMBIE_MESH_NAME) {
+			LOG("Loaded zombie");
+			zombie_mesh = new Mesh(mesh);
+			return;
+		}
+
 
 		drawable.pipeline = lit_color_texture_program_pipeline;
 
-		drawable.pipeline.vao = phonebank_meshes_for_lit_color_texture_program;
+		drawable.pipeline.vao = largecharge_meshes_for_lit_color_texture_program;
 		drawable.pipeline.type = mesh.type;
 		drawable.pipeline.start = mesh.start;
 		drawable.pipeline.count = mesh.count;
@@ -38,16 +70,17 @@ Load< Scene > phonebank_scene(LoadTagDefault, []() -> Scene const * {
 });
 
 WalkMesh const *walkmesh = nullptr;
-Load< WalkMeshes > phonebank_walkmeshes(LoadTagDefault, []() -> WalkMeshes const * {
-	WalkMeshes *ret = new WalkMeshes(data_path("phone-bank.w"));
-	walkmesh = &ret->lookup("WalkMesh");
+Load< WalkMeshes > largecharge_walkmeshes(LoadTagDefault, []() -> WalkMeshes const * {
+	WalkMeshes *ret = new WalkMeshes(data_path("large-and-in-charge.w"));
+	walkmesh = &ret->lookup(WALK_MESH_NAME);
 	return ret;
 });
 
-PlayMode::PlayMode() : scene(*phonebank_scene) {
+PlayMode::PlayMode() : scene(*largecharge_scene) {
 	//create a player transform:
 	scene.transforms.emplace_back();
 	player.transform = &scene.transforms.back();
+	player.transform->position = glm::vec3(0.0f, 0.0f, -100.0f);
 
 	//create a player camera attached to a child of the player transform:
 	scene.transforms.emplace_back();
@@ -57,8 +90,8 @@ PlayMode::PlayMode() : scene(*phonebank_scene) {
 	player.camera->near = 0.01f;
 	player.camera->transform->parent = player.transform;
 
-	//player's eyes are 1.8 units above the ground:
-	player.camera->transform->position = glm::vec3(0.0f, 0.0f, 1.8f);
+	//3rd person camera, 10 units above the player:
+	player.camera->transform->position = glm::vec3(0.0f, -30.0f, 30.0f);
 
 	//rotate camera facing direction (-z) to player facing direction (+y):
 	player.camera->transform->rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -66,9 +99,32 @@ PlayMode::PlayMode() : scene(*phonebank_scene) {
 	//start player walking at nearest walk point:
 	player.at = walkmesh->nearest_walk_point(player.transform->position);
 
+	if (player_mesh != nullptr) {
+		scene.transforms.emplace_back();
+		player.model_transform = &scene.transforms.back();
+		player.model_transform->position = glm::vec3(0.0f, 0.0f, PLAYER_RADIUS);
+		player.model_transform->rotation = glm::quat(
+			glm::vec3(glm::radians(180.0f), glm::radians(0.0f), glm::radians(0.0f)));
+		player.model_transform->parent = player.transform;
+
+		scene.drawables.emplace_back(player.model_transform);
+		Scene::Drawable &drawable = scene.drawables.back();
+		drawable.pipeline = lit_color_texture_program_pipeline;
+
+		drawable.pipeline.vao = largecharge_meshes_for_lit_color_texture_program;
+		drawable.pipeline.type = player_mesh->type;
+		drawable.pipeline.start = player_mesh->start;
+		drawable.pipeline.count = player_mesh->count;
+	}
 }
 
 PlayMode::~PlayMode() {
+	if (player_mesh != nullptr) {
+		delete player_mesh;
+	}
+	if (zombie_mesh != nullptr) {
+		delete zombie_mesh;
+	}
 }
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
@@ -77,35 +133,14 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		if (evt.key.keysym.sym == SDLK_ESCAPE) {
 			SDL_SetRelativeMouseMode(SDL_FALSE);
 			return true;
-		} else if (evt.key.keysym.sym == SDLK_a) {
-			left.downs += 1;
-			left.pressed = true;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.downs += 1;
-			right.pressed = true;
-			return true;
 		} else if (evt.key.keysym.sym == SDLK_w) {
 			up.downs += 1;
 			up.pressed = true;
 			return true;
-		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.downs += 1;
-			down.pressed = true;
-			return true;
 		}
 	} else if (evt.type == SDL_KEYUP) {
-		if (evt.key.keysym.sym == SDLK_a) {
-			left.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_w) {
+		if (evt.key.keysym.sym == SDLK_w) {
 			up.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.pressed = false;
 			return true;
 		}
 	} else if (evt.type == SDL_MOUSEBUTTONDOWN) {
@@ -138,14 +173,12 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 
 void PlayMode::update(float elapsed) {
 	//player walking:
+	glm::vec2 move;
 	{
 		//combine inputs into a move:
-		constexpr float PlayerSpeed = 3.0f;
-		glm::vec2 move = glm::vec2(0.0f);
-		if (left.pressed && !right.pressed) move.x =-1.0f;
-		if (!left.pressed && right.pressed) move.x = 1.0f;
-		if (down.pressed && !up.pressed) move.y =-1.0f;
-		if (!down.pressed && up.pressed) move.y = 1.0f;
+		constexpr float PlayerSpeed = 12.0f;
+		move = glm::vec2(0.0f);
+		if (up.pressed) move.y = 1.0f;
 
 		//make it so that moving diagonally doesn't go faster:
 		if (move != glm::vec2(0.0f)) move = glm::normalize(move) * PlayerSpeed * elapsed;
@@ -204,12 +237,18 @@ void PlayMode::update(float elapsed) {
 		player.transform->position = walkmesh->to_world_point(player.at);
 
 		{ //update player's rotation to respect local (smooth) up-vector:
-			
+
 			glm::quat adjust = glm::rotation(
 				player.transform->rotation * glm::vec3(0.0f, 0.0f, 1.0f), //current up vector
 				walkmesh->to_world_smooth_normal(player.at) //smoothed up vector at walk location
 			);
 			player.transform->rotation = glm::normalize(adjust * player.transform->rotation);
+		}
+
+		{
+			// This sort of looks right for rotation. The math makes no sense though...
+			glm::quat rot = glm::quat(glm::vec3(-2 * glm::length(move) / (PLAYER_RADIUS * MATH_PI), 0.0f, 0.0f));
+			player.model_transform->rotation = rot * player.model_transform->rotation;
 		}
 
 		/*
@@ -223,10 +262,7 @@ void PlayMode::update(float elapsed) {
 	}
 
 	//reset button press counters:
-	left.downs = 0;
-	right.downs = 0;
 	up.downs = 0;
-	down.downs = 0;
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -234,14 +270,15 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	player.camera->aspect = float(drawable_size.x) / float(drawable_size.y);
 
 	//set up light type and position for lit_color_texture_program:
-	// TODO: consider using the Light(s) in the scene to do this
 	glUseProgram(lit_color_texture_program->program);
 	glUniform1i(lit_color_texture_program->LIGHT_TYPE_int, 1);
-	glUniform3fv(lit_color_texture_program->LIGHT_DIRECTION_vec3, 1, glm::value_ptr(glm::vec3(0.0f, 0.0f,-1.0f)));
-	glUniform3fv(lit_color_texture_program->LIGHT_ENERGY_vec3, 1, glm::value_ptr(glm::vec3(1.0f, 1.0f, 0.95f)));
+	glUniform3fv(lit_color_texture_program->LIGHT_DIRECTION_vec3, 1, glm::value_ptr(-glm::normalize(player.transform->position)));
+
+	//light is directly above the player
+	glUniform3fv(lit_color_texture_program->LIGHT_ENERGY_vec3, 1, glm::value_ptr(glm::vec3(0.8f, 0.8f, 0.75f)));
 	glUseProgram(0);
 
-	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+	glClearColor(1.0f, 0.937f, 0.529f, 1.0f);
 	glClearDepth(1.0f); //1.0 is actually the default value to clear the depth buffer to, but FYI you can change it.
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
